@@ -1,52 +1,128 @@
-# STEP 0
-
-# SQL Library and Pandas Library
 import sqlite3
 import pandas as pd
 
-# Connect to the database
 conn = sqlite3.connect('data.sqlite')
 
-pd.read_sql("""SELECT * FROM sqlite_master""", conn)
+# =========================
+# STEP 1: Join + Filter
+# =========================
+df_boston = pd.read_sql("""
+SELECT c.contactFirstName AS firstName,
+       c.contactLastName AS lastName
+FROM customers c
+JOIN employees e
+ON c.salesRepEmployeeNumber = e.employeeNumber
+WHERE c.city = 'Boston'
+""", conn)
 
-# STEP 1
-# Replace None with your code
-df_boston = None
+df_zero_emp = pd.read_sql("""
+SELECT e.*
+FROM employees e
+LEFT JOIN customers c
+ON e.employeeNumber = c.salesRepEmployeeNumber
+WHERE c.customerNumber IS NULL
+""", conn)
 
-# STEP 2
-# Replace None with your code
-df_zero_emp = None
 
-# STEP 3
-# Replace None with your code
-df_employee = None
+# =========================
+# STEP 2: Type of Join
+# =========================
+df_employee = pd.read_sql("""
+SELECT e.firstName,
+       e.lastName,
+       e.jobTitle,
+       o.city
+FROM employees e
+JOIN offices o
+ON e.officeCode = o.officeCode
+""", conn)
 
-# STEP 4
-# Replace None with your code
-df_contacts = None
+df_contacts = pd.read_sql("""
+SELECT customerName,
+       contactFirstName,
+       contactLastName,
+       phone
+FROM customers
+""", conn)
 
-# STEP 5
-# Replace None with your code
-df_payment = None
 
-# STEP 6
-# Replace None with your code
-df_credit = None
+# =========================
+# STEP 3: Built-in Function
+# =========================
+df_payment = pd.read_sql("""
+SELECT c.customerName,
+       c.contactFirstName,
+       p.paymentDate,
+       CAST(p.amount AS REAL) AS amount
+FROM payments p
+JOIN customers c
+ON p.customerNumber = c.customerNumber
+""", conn)
 
-# STEP 7
-# Replace None with your code
-df_product_sold = None
 
-# STEP 8
-# Replace None with your code
-df_total_customers = None
+# =========================
+# STEP 4: Joining + Grouping
+# =========================
+df_credit = pd.read_sql("""
+SELECT e.firstName,
+       e.lastName,
+       c.creditLimit
+FROM customers c
+JOIN employees e
+ON c.salesRepEmployeeNumber = e.employeeNumber
+WHERE c.creditLimit > 100000
+""", conn)
 
-# STEP 9
-# Replace None with your code
-df_customers = None
 
-# STEP 10
-# Replace None with your code
-df_under_20 = None
+df_product_sold = pd.read_sql("""
+SELECT p.productCode,
+       p.productName,
+       SUM(od.quantityOrdered) AS totalunits
+FROM products p
+JOIN orderdetails od
+ON p.productCode = od.productCode
+GROUP BY p.productCode, p.productName
+""", conn)
+
+
+# =========================
+# STEP 5: Multiple Joins
+# =========================
+df_total_customers = pd.read_sql("""
+SELECT e.firstName,
+       e.lastName,
+       COUNT(c.customerNumber) AS numpurchasers
+FROM employees e
+LEFT JOIN customers c
+ON e.employeeNumber = c.salesRepEmployeeNumber
+GROUP BY e.employeeNumber
+""", conn)
+
+
+df_customers = pd.read_sql("""
+SELECT e.firstName,
+       COUNT(c.customerNumber) AS n_customers
+FROM employees e
+LEFT JOIN customers c
+ON e.employeeNumber = c.salesRepEmployeeNumber
+GROUP BY e.employeeNumber
+""", conn)
+
+
+# =========================
+# STEP 6: Subquery
+# =========================
+df_under_20 = pd.read_sql("""
+SELECT c.contactFirstName AS firstName,
+       c.contactLastName AS lastName,
+       c.creditLimit,
+       COUNT(p.checkNumber) AS num_payments,
+       SUM(p.amount) AS total_spent
+FROM customers c
+JOIN payments p
+ON c.customerNumber = p.customerNumber
+GROUP BY c.customerNumber
+HAVING SUM(p.amount) < 20000
+""", conn)
 
 conn.close()
