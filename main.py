@@ -4,125 +4,158 @@ import pandas as pd
 conn = sqlite3.connect('data.sqlite')
 
 # =========================
-# STEP 1: Join + Filter
+# STEP 1: Boston employees (FIXED: 2 columns only)
 # =========================
 df_boston = pd.read_sql("""
-SELECT c.contactFirstName AS firstName,
-       c.contactLastName AS lastName
-FROM customers c
-JOIN employees e
-ON c.salesRepEmployeeNumber = e.employeeNumber
-WHERE c.city = 'Boston'
+SELECT e.firstName,
+       e.lastName
+FROM employees e
+JOIN offices o
+ON e.officeCode = o.officeCode
+WHERE o.city = 'Boston'
+ORDER BY e.firstName
 """, conn)
 
+# Offices with zero employees
 df_zero_emp = pd.read_sql("""
-SELECT e.*
-FROM employees e
-LEFT JOIN customers c
-ON e.employeeNumber = c.salesRepEmployeeNumber
-WHERE c.customerNumber IS NULL
+SELECT o.officeCode, o.city
+FROM offices o
+LEFT JOIN employees e
+ON o.officeCode = e.officeCode
+WHERE e.employeeNumber IS NULL
 """, conn)
 
 
 # =========================
-# STEP 2: Type of Join
+# STEP 2: Employees + office info
 # =========================
 df_employee = pd.read_sql("""
 SELECT e.firstName,
        e.lastName,
-       e.jobTitle,
-       o.city
+       o.city,
+       o.state
 FROM employees e
-JOIN offices o
+LEFT JOIN offices o
 ON e.officeCode = o.officeCode
+ORDER BY e.firstName, e.lastName
 """, conn)
 
+
+# Customers with NO orders
 df_contacts = pd.read_sql("""
-SELECT customerName,
-       contactFirstName,
-       contactLastName,
-       phone
-FROM customers
+SELECT c.contactFirstName,
+       c.contactLastName,
+       c.phone,
+       c.salesRepEmployeeNumber
+FROM customers c
+LEFT JOIN orders o
+ON c.customerNumber = o.customerNumber
+WHERE o.orderNumber IS NULL
+ORDER BY c.contactLastName
 """, conn)
 
 
 # =========================
-# STEP 3: Built-in Function
+# STEP 3: Payments (fix datatype + 4 columns only)
 # =========================
 df_payment = pd.read_sql("""
-SELECT c.customerName,
-       c.contactFirstName,
+SELECT c.contactFirstName,
+       c.contactLastName,
        p.paymentDate,
        CAST(p.amount AS REAL) AS amount
 FROM payments p
 JOIN customers c
 ON p.customerNumber = c.customerNumber
+ORDER BY amount DESC
 """, conn)
 
 
 # =========================
-# STEP 4: Joining + Grouping
+# STEP 4: High credit customers (FIXED GROUPING)
 # =========================
 df_credit = pd.read_sql("""
-SELECT e.firstName,
+SELECT e.employeeNumber,
+       e.firstName,
        e.lastName,
-       c.creditLimit
-FROM customers c
-JOIN employees e
-ON c.salesRepEmployeeNumber = e.employeeNumber
-WHERE c.creditLimit > 100000
+       COUNT(c.customerNumber) AS num_customers
+FROM employees e
+JOIN customers c
+ON e.employeeNumber = c.salesRepEmployeeNumber
+GROUP BY e.employeeNumber
+HAVING AVG(c.creditLimit) > 90000
+ORDER BY num_customers DESC
 """, conn)
 
 
+# Product popularity
 df_product_sold = pd.read_sql("""
-SELECT p.productCode,
-       p.productName,
+SELECT p.productName,
+       COUNT(od.orderNumber) AS numorders,
        SUM(od.quantityOrdered) AS totalunits
 FROM products p
 JOIN orderdetails od
 ON p.productCode = od.productCode
-GROUP BY p.productCode, p.productName
+GROUP BY p.productCode
+ORDER BY totalunits DESC
 """, conn)
 
 
 # =========================
-# STEP 5: Multiple Joins
+# STEP 5: Product reach
 # =========================
 df_total_customers = pd.read_sql("""
-SELECT e.firstName,
-       e.lastName,
-       COUNT(c.customerNumber) AS numpurchasers
-FROM employees e
-LEFT JOIN customers c
-ON e.employeeNumber = c.salesRepEmployeeNumber
-GROUP BY e.employeeNumber
+SELECT p.productName,
+       p.productCode,
+       COUNT(DISTINCT o.customerNumber) AS numpurchasers
+FROM products p
+JOIN orderdetails od
+ON p.productCode = od.productCode
+JOIN orders o
+ON od.orderNumber = o.orderNumber
+GROUP BY p.productCode
+ORDER BY numpurchasers DESC
 """, conn)
 
 
+# Customers per office (FIXED INNER RESULT EXPECTATION)
 df_customers = pd.read_sql("""
-SELECT e.firstName,
-       COUNT(c.customerNumber) AS n_customers
-FROM employees e
-LEFT JOIN customers c
+SELECT o.officeCode,
+       o.city,
+       COUNT(DISTINCT c.customerNumber) AS n_customers
+FROM offices o
+JOIN employees e
+ON o.officeCode = e.officeCode
+JOIN customers c
 ON e.employeeNumber = c.salesRepEmployeeNumber
-GROUP BY e.employeeNumber
+GROUP BY o.officeCode, o.city
+ORDER BY n_customers DESC;
 """, conn)
-
-
 # =========================
-# STEP 6: Subquery
+# STEP 6: Underperforming employees (FIXED SUBQUERY)
 # =========================
 df_under_20 = pd.read_sql("""
-SELECT c.contactFirstName AS firstName,
-       c.contactLastName AS lastName,
-       c.creditLimit,
-       COUNT(p.checkNumber) AS num_payments,
-       SUM(p.amount) AS total_spent
-FROM customers c
-JOIN payments p
-ON c.customerNumber = p.customerNumber
-GROUP BY c.customerNumber
-HAVING SUM(p.amount) < 20000
+SELECT DISTINCT e.employeeNumber,
+       e.firstName,
+       e.lastName,
+       o.city,
+       o.officeCode
+FROM employees e
+JOIN offices o
+ON e.officeCode = o.officeCode
+JOIN customers c
+ON e.employeeNumber = c.salesRepEmployeeNumber
+JOIN orders o2
+ON c.customerNumber = o2.customerNumber
+JOIN orderdetails od
+ON o2.orderNumber = od.orderNumber
+WHERE od.productCode IN (
+    SELECT od2.productCode
+    FROM orderdetails od2
+    JOIN orders o3
+    ON od2.orderNumber = o3.orderNumber
+    GROUP BY od2.productCode
+    HAVING COUNT(DISTINCT o3.customerNumber) < 20
+);
 """, conn)
 
 conn.close()
